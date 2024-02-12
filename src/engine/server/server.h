@@ -3,6 +3,8 @@
 #ifndef ENGINE_SERVER_SERVER_H
 #define ENGINE_SERVER_SERVER_H
 
+#include <caf/actor_system.hpp>
+
 #include <base/hash.h>
 
 #include <engine/console.h>
@@ -102,6 +104,7 @@ public:
 
 class CServer : public IServer
 {
+	caf::actor_system& sys_;
 	friend class CServerLogger;
 
 	class IGameServer *m_pGameServer;
@@ -300,7 +303,7 @@ public:
 	std::shared_ptr<ILogger> m_pFileLogger = nullptr;
 	std::shared_ptr<ILogger> m_pStdoutLogger = nullptr;
 
-	CServer();
+	CServer(caf::actor_system& sys);
 	~CServer();
 
 	bool IsClientNameAvailable(int ClientID, const char *pNameRequest);
@@ -520,5 +523,5 @@ public:
 #endif
 };
 
-extern CServer *CreateServer();
+extern CServer *CreateServer(caf::actor_system& sys);
 #endif

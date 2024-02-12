@@ -3,6 +3,9 @@
 
 #include "server.h"
 
+#include <caf/actor_ostream.hpp>
+#include <caf/event_based_actor.hpp>
+
 #include <base/logger.h>
 #include <base/math.h>
 #include <base/system.h>
@@ -310,7 +313,7 @@ void CServer::CClient::Reset()
 	m_RedirectDropTime = 0;
 }
 
-CServer::CServer()
+CServer::CServer(caf::actor_system& sys): sys_(sys)
 {
 	m_pConfig = &g_Config;
 	for(int i = 0; i < MAX_CLIENTS; i++)
@@ -3902,7 +3905,7 @@ void CServer::SnapSetStaticsize(int ItemType, int Size)
 	m_SnapshotDelta.SetStaticsize(ItemType, Size);
 }
 
-CServer *CreateServer() { return new CServer(); }
+CServer *CreateServer(caf::actor_system& sys) { return new CServer(sys); }
 
 // DDRace
 

@@ -1,6 +1,9 @@
 
 #define _WIN32_WINNT 0x0501
 
+#include "caf/actor_system.hpp"
+#include "caf/caf_main.hpp"
+
 #include <base/logger.h>
 #include <base/system.h>
 
@@ -45,22 +48,30 @@ void HandleSigIntTerm(int Param)
 	signal(SIGTERM, SIG_DFL);
 }
 
-int main(int argc, const char **argv)
-{
-	CCmdlineFix CmdlineFix(&argc, &argv);
-	bool Silent = false;
+// -- constants ----------------------------------------------------------------
 
-	for(int i = 1; i < argc; i++)
-	{
-		if(str_comp("-s", argv[i]) == 0 || str_comp("--silent", argv[i]) == 0)
-		{
-			Silent = true;
-#if defined(CONF_FAMILY_WINDOWS)
-			ShowWindow(GetConsoleWindow(), SW_HIDE);
-#endif
-			break;
-		}
-	}
+static constexpr uint16_t default_port = 7788;
+
+static constexpr std::string_view default_host = "localhost";
+
+// -- configuration setup ------------------------------------------------------
+
+class config : public caf::actor_system_config {
+public:
+  config() {
+    opt_group{custom_options_, "global"}
+      .add<bool>("silent,s", "if silent");
+  }
+};
+
+/* int caf_main(int argc, const char **argv) */
+int caf_main(caf::actor_system& sys, const config& cfg)
+{
+	auto [argc_, argv_] = cfg.c_args_remainder();
+	int argc = argc_;
+	const char** argv = (const char**)argv_;
+	CCmdlineFix CmdlineFix(&argc, &argv);
+	bool Silent = get_or(cfg, "silent", false);
 
 #if defined(CONF_FAMILY_WINDOWS)
 	CWindowsComLifecycle WindowsComLifecycle(false);
@@ -106,7 +117,7 @@ int main(int argc, const char **argv)
 	init_exception_handler();
 #endif
 
-	CServer *pServer = CreateServer();
+	CServer *pServer = CreateServer(sys);
 	pServer->SetLoggers(pFutureFileLogger, std::move(pStdoutLogger));
 
 	IKernel *pKernel = IKernel::Create();
@@ -201,3 +212,5 @@ int main(int argc, const char **argv)
 
 	return Ret;
 }
+
+CAF_MAIN();
