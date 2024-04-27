@@ -496,6 +496,7 @@ public:
 	void OnWindowResize() override;
 
 	bool m_LanguageChanged = false;
+	int m_NextAiHandledTick = 0;
 	void OnLanguageChange();
 	void HandleLanguageChanged();
 

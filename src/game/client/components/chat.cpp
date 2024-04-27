@@ -17,12 +17,22 @@
 #include <game/client/gameclient.h>
 #include <game/localization.h>
 
+#include <algorithm>
+#include <cctype>
+#include <future>
+#include <locale>
+#include <openai.hpp>
+
 #include "chat.h"
 
 char CChat::ms_aDisplayText[MAX_LINE_LENGTH] = {'\0'};
 
 CChat::CChat()
 {
+	openai::start("ollama", "", false, "http://localhost:9999/v1/chat/");
+	// m_messages = new std::queue<std::string>();
+	// m_messagesMutex = new std::mutex();
+
 	for(auto &Line : m_aLines)
 	{
 		// reset the container indices, so the text containers can be deleted on reset
@@ -182,6 +192,166 @@ void CChat::ConEcho(IConsole::IResult *pResult, void *pUserData)
 	((CChat *)pUserData)->Echo(pResult->GetString(0));
 }
 
+std::string trim_copy(std::string s)
+{
+	auto wsfront = std::find_if_not(s.begin(), s.end(), [](int c) { return std::isspace(c); });
+	auto wsback = std::find_if_not(s.rbegin(), s.rend(), [](int c) { return std::isspace(c); }).base();
+	return (wsback <= wsfront ? std::string() : std::string(wsfront, wsback));
+}
+
+void CChat::ConAi(IConsole::IResult *pResult, void *pUserData)
+{
+	auto *pChat = (CChat *)pUserData;
+	auto lines = 10;
+	if(pResult->NumArguments() > 0)
+	{
+		lines = pResult->GetInteger(0);
+	}
+
+	int line = pChat->m_CurrentLine - 100;
+	if(line < 0)
+	{
+		line = 0;
+	}
+
+	nlohmann::json j{};
+	j["model"] = "llama3:latest";
+	j["temperature"] = 1.5;
+	j["messages"] = nlohmann::json::array();
+
+	auto name = pChat->m_pClient->m_aClients[pChat->m_pClient->m_aLocalIds[0]].m_aName;
+
+	char aBuf[128];
+	str_format(aBuf, sizeof(aBuf), "You're a teeworlds player called \"%s\" and you want to engage in interesting conversations!", name);
+
+	nlohmann::json sys_message{};
+	sys_message["role"] = "system";
+	sys_message["content"] = aBuf;
+	j["messages"].push_back(sys_message);
+
+	for(; line <= pChat->m_CurrentLine; line++)
+	{
+		auto pCurrentLine = &pChat->m_aLines[line];
+		if(pCurrentLine->m_ClientId < 0)
+		{
+			continue;
+		}
+		nlohmann::json message{};
+		message["role"] = "user";
+		message["content"] = pCurrentLine->m_aText;
+		message["name"] = pCurrentLine->m_aName;
+		j["messages"].push_back(message);
+	}
+
+	std::thread thread([=] {
+		try
+		{
+			auto completion = openai::completion().create(j);
+			if(completion.is_null())
+			{
+				pChat->Echo("Failed to get response from AI. Null response");
+				return;
+			}
+			if(!completion.contains("choices") || completion["choices"].size() == 0)
+			{
+				pChat->Echo("Failed to get response from AI. No choices");
+				return;
+			}
+			const auto &choice = completion["choices"][0];
+			if(!choice.contains("finish_reason") || choice["finish_reason"] != "stop")
+			{
+				pChat->Echo("Failed to get response from AI. Finish reason not stop");
+				return;
+			}
+			auto message = choice["message"]["content"];
+			auto message_string = message.get<std::string>();
+
+			std::string::size_type pos = 0; // Must initialize
+			while((pos = message_string.find("\n", pos)) != std::string::npos)
+			{
+				message_string[pos] = ' ';
+			}
+
+			pos = 0; // Must initialize
+			while((pos = message_string.find("\r\n", pos)) != std::string::npos)
+			{
+				message_string[pos] = ' ';
+			}
+
+			size_t start = 0;
+
+			constexpr int maxLength = 200;
+			while(start < message_string.length())
+			{
+				size_t end = start + maxLength;
+				if(end > message_string.length())
+				{
+					end = message_string.length();
+				}
+				else
+				{
+					// Make sure to split on the whitespace, not in the middle of a word
+					while(end > start && message_string[end] != ' ')
+					{
+						end--;
+					}
+					if(end == start)
+					{
+						end = start + maxLength; // fallback in case there's a very long word
+					}
+				}
+				auto part = message_string.substr(start, end - start);
+				auto new_part = trim_copy(part);
+				if(!new_part.empty())
+				{
+					pChat->Echo(new_part.c_str());
+					std::lock_guard<std::mutex> lock(pChat->m_messagesMutex);
+					pChat->m_messages.push(new_part);
+				}
+				start = end;
+				while(start < message_string.length() && message_string[start] == ' ')
+				{
+					start++; // Skip leading whitespaces on the new line
+				}
+			}
+		}
+		catch(const std::exception &e)
+		{
+			pChat->Echo(std::string("Failed to get response from AI. Exception: ").append(e.what()).c_str());
+		}
+	});
+	thread.detach();
+}
+
+void CChat::HandleAiMessages()
+{
+	if((m_LastChatSend + (time_freq() * 5)) >= time() && (m_PendingChatCounter > 0))
+	{
+		return;
+	}
+	if(!m_messagesMutex.try_lock())
+	{
+		return;
+	}
+	if(m_messages.empty())
+	{
+		m_messagesMutex.unlock();
+		return;
+	}
+
+	auto msg = m_messages.front();
+	char aBuf[201];
+	str_format(aBuf, sizeof(aBuf), "%s", msg.c_str());
+	auto old_mode = m_Mode;
+	m_Mode = MODE_ALL;
+	Echo(aBuf);
+	SayChat(aBuf);
+	m_Mode = old_mode;
+	m_messages.pop();
+
+	m_messagesMutex.unlock();
+}
+
 void CChat::ConchainChatOld(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData)
 {
 	pfnCallback(pResult, pCallbackUserData);
@@ -216,6 +386,7 @@ void CChat::OnConsoleInit()
 	Console()->Register("chat", "s['team'|'all'] ?r[message]", CFGFLAG_CLIENT, ConChat, this, "Enable chat with all/team mode");
 	Console()->Register("+show_chat", "", CFGFLAG_CLIENT, ConShowChat, this, "Show chat");
 	Console()->Register("echo", "r[message]", CFGFLAG_CLIENT | CFGFLAG_STORE, ConEcho, this, "Echo the text in chat window");
+	Console()->Register("ai", "", CFGFLAG_CLIENT, ConAi, this, "LUL");
 }
 
 void CChat::OnInit()

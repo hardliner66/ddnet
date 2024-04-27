@@ -2,3 +2,6 @@
 	path = ddnet-libs
 	url = https://github.com/ddnet/ddnet-libs
 	shallow = true
+[submodule "extern/openai"]
+	path = extern/openai
+	url = https://github.com/olrea/openai-cpp

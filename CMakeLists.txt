@@ -10,6 +10,8 @@ file(STRINGS src/game/version.h VERSION_LINE
   REGEX "^#define GAME_RELEASE_VERSION "
 )
 
+include_directories("extern/openai/include/openai" ${CURL_INCLUDE_DIRS})
+
 if(VERSION_LINE MATCHES "\"([0-9]+)\\.([0-9]+)\\.([0-9]+)\"")
   set(VERSION_MAJOR ${CMAKE_MATCH_1})
   set(VERSION_MINOR ${CMAKE_MATCH_2})

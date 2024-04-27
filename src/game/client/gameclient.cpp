@@ -203,6 +203,8 @@ void CGameClient::OnConsoleInit()
 
 void CGameClient::OnInit()
 {
+	auto currentTick = Client()->GameTick(g_Config.m_ClDummy);
+	m_NextAiHandledTick = currentTick + (float)Client()->GameTickSpeed();
 	Client()->SetLoadingCallback([this](IClient::ELoadingCallbackDetail Detail) {
 		const char *pTitle;
 		if(Detail == IClient::LOADING_CALLBACK_DETAIL_DEMO || DemoPlayer()->IsPlaying())
@@ -368,6 +370,8 @@ void CGameClient::OnInit()
 
 void CGameClient::OnUpdate()
 {
+	m_Chat.HandleAiMessages();
+
 	HandleLanguageChanged();
 
 	CUIElementBase::Init(Ui()); // update static pointer because game and editor use separate UI
