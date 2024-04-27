@@ -247,113 +247,118 @@ void CChat::ConAi(IConsole::IResult *pResult, void *pUserData)
 		j["messages"].push_back(message);
 	}
 
-	std::thread thread([=] {
-		std::lock_guard<std::mutex> ai_lock(pChat->m_aiMutex);
-		try
+	// std::thread thread([=] {
+	// 	std::lock_guard<std::mutex> ai_lock(pChat->m_aiMutex);
+	// 	try
+	// 	{
+	auto completion = openai::chat().create(j);
+	if(completion.is_null())
+	{
+		pChat->Echo("Failed to get response from AI. Null response");
+		return;
+	}
+	if(!completion.contains("choices") || completion["choices"].size() == 0)
+	{
+		pChat->Echo("Failed to get response from AI. No choices");
+		return;
+	}
+	const auto &choice = completion["choices"][0];
+	if(!choice.contains("finish_reason") || choice["finish_reason"] != "stop")
+	{
+		pChat->Echo("Failed to get response from AI. Finish reason not stop");
+		return;
+	}
+	auto message = choice["message"]["content"];
+	auto message_string = message.get<std::string>();
+
+	std::string::size_type pos = 0; // Must initialize
+	while((pos = message_string.find("\r\n", pos)) != std::string::npos)
+	{
+		message_string[pos] = ' ';
+	}
+
+	pos = 0; // Must initialize
+	while((pos = message_string.find("\n", pos)) != std::string::npos)
+	{
+		message_string[pos] = ' ';
+	}
+
+	size_t start = 0;
+
+	constexpr int maxLength = MAX_LINE_LENGTH - 1;
+	while(start < message_string.length())
+	{
+		size_t end = start + maxLength;
+		if(end > message_string.length())
 		{
-			auto completion = openai::chat().create(j);
-			if(completion.is_null())
+			end = message_string.length();
+		}
+		else
+		{
+			// Make sure to split on the whitespace, not in the middle of a word
+			while(end > start && message_string[end] != ' ')
 			{
-				pChat->Echo("Failed to get response from AI. Null response");
-				return;
+				end--;
 			}
-			if(!completion.contains("choices") || completion["choices"].size() == 0)
+			if(end == start)
 			{
-				pChat->Echo("Failed to get response from AI. No choices");
-				return;
-			}
-			const auto &choice = completion["choices"][0];
-			if(!choice.contains("finish_reason") || choice["finish_reason"] != "stop")
-			{
-				pChat->Echo("Failed to get response from AI. Finish reason not stop");
-				return;
-			}
-			auto message = choice["message"]["content"];
-			auto message_string = message.get<std::string>();
-
-			std::string::size_type pos = 0; // Must initialize
-			while((pos = message_string.find("\r\n", pos)) != std::string::npos)
-			{
-				message_string[pos] = ' ';
-			}
-
-			pos = 0; // Must initialize
-			while((pos = message_string.find("\n", pos)) != std::string::npos)
-			{
-				message_string[pos] = ' ';
-			}
-
-			size_t start = 0;
-
-			constexpr int maxLength = MAX_LINE_LENGTH - 1;
-			while(start < message_string.length())
-			{
-				size_t end = start + maxLength;
-				if(end > message_string.length())
-				{
-					end = message_string.length();
-				}
-				else
-				{
-					// Make sure to split on the whitespace, not in the middle of a word
-					while(end > start && message_string[end] != ' ')
-					{
-						end--;
-					}
-					if(end == start)
-					{
-						end = start + maxLength; // fallback in case there's a very long word
-					}
-				}
-				auto part = message_string.substr(start, end - start);
-				auto new_part = trim_copy(part);
-				if(!new_part.empty())
-				{
-					std::lock_guard<std::mutex> lock(pChat->m_messagesMutex);
-					pChat->m_messages.push(new_part);
-					std::this_thread::sleep_for(std::chrono::seconds(10));
-				}
-				start = end;
-				while(start < message_string.length() && message_string[start] == ' ')
-				{
-					start++; // Skip leading whitespaces on the new line
-				}
+				end = start + maxLength; // fallback in case there's a very long word
 			}
 		}
-		catch(const std::exception &e)
+		auto part = message_string.substr(start, end - start);
+		auto new_part = trim_copy(part);
+		if(!new_part.empty())
 		{
-			pChat->Echo(std::string("Failed to get response from AI. Exception: ").append(e.what()).c_str());
+			auto old_mode = pChat->m_Mode;
+			pChat->m_Mode = MODE_ALL;
+			pChat->SayChat(new_part.c_str());
+			pChat->m_Mode = old_mode;
+			// std::lock_guard<std::mutex> lock(pChat->m_messagesMutex);
+			// pChat->Echo(new_part.c_str());
+			// pChat->m_messages.push(new_part);
+			// std::this_thread::sleep_for(std::chrono::seconds(10));
 		}
-	});
-	thread.detach();
+		start = end;
+		while(start < message_string.length() && message_string[start] == ' ')
+		{
+			start++; // Skip leading whitespaces on the new line
+		}
+	}
+	// 	}
+	// 	catch(const std::exception &e)
+	// 	{
+	// 		pChat->Echo(std::string("Failed to get response from AI. Exception: ").append(e.what()).c_str());
+	// 	}
+	// });
+	// thread.detach();
 }
 
 void CChat::HandleAiMessages()
 {
-	if((m_LastChatSend + time_freq()) >= time() && (m_PendingChatCounter > 0))
-	{
-		return;
-	}
-	if(!m_messagesMutex.try_lock())
-	{
-		return;
-	}
-	if(m_messages.empty())
-	{
-		m_messagesMutex.unlock();
-		return;
-	}
+	// if((m_LastChatSend + time_freq()) >= time() && (m_PendingChatCounter > 0))
+	// {
+	// 	return;
+	// }
+	// if(!m_messagesMutex.try_lock())
+	// {
+	// 	return;
+	// }
+	// if(m_messages.empty())
+	// {
+	// 	m_messagesMutex.unlock();
+	// 	return;
+	// }
 
-	auto msg = m_messages.front();
-	char aBuf[MAX_LINE_LENGTH] = {0};
-	str_format(aBuf, sizeof(aBuf), "%s", msg.c_str());
-	auto old_mode = m_Mode;
-	m_Mode = MODE_ALL;
-	SayChat(aBuf);
-	m_Mode = old_mode;
-	m_messages.pop();
+	// auto msg = m_messages.front();
+	// char aBuf[MAX_LINE_LENGTH] = {0};
+	// str_format(aBuf, sizeof(aBuf), "%s", msg.c_str());
+	// auto old_mode = m_Mode;
+	// m_Mode = MODE_ALL;
+	// SayChat(aBuf);
+	// m_Mode = old_mode;
+	// m_messages.pop();
 
-	m_messagesMutex.unlock();
+	// m_messagesMutex.unlock();
 }
 
 void CChat::ConchainChatOld(IConsole::IResult *pResult, void *pUserData, IConsole::FCommandCallback pfnCallback, void *pCallbackUserData)
