@@ -29,7 +29,7 @@ char CChat::ms_aDisplayText[MAX_LINE_LENGTH] = {'\0'};
 
 CChat::CChat()
 {
-	openai::start("ollama", "", false, "http://localhost:9999/v1/chat/");
+	openai::start("ollama", "", false, "http://localhost:9999/v1/");
 	// m_messages = new std::queue<std::string>();
 	// m_messagesMutex = new std::mutex();
 
@@ -202,11 +202,6 @@ std::string trim_copy(std::string s)
 void CChat::ConAi(IConsole::IResult *pResult, void *pUserData)
 {
 	auto *pChat = (CChat *)pUserData;
-	auto lines = 10;
-	if(pResult->NumArguments() > 0)
-	{
-		lines = pResult->GetInteger(0);
-	}
 
 	int line = pChat->m_CurrentLine - 100;
 	if(line < 0)
@@ -243,10 +238,21 @@ void CChat::ConAi(IConsole::IResult *pResult, void *pUserData)
 		j["messages"].push_back(message);
 	}
 
+	if(pResult->NumArguments() > 0)
+	{
+		auto msg = pResult->GetString(0);
+		nlohmann::json message{};
+		message["role"] = "user";
+		message["content"] = msg;
+		message["name"] = name;
+		j["messages"].push_back(message);
+	}
+
 	std::thread thread([=] {
+		std::lock_guard<std::mutex> ai_lock(pChat->m_aiMutex);
 		try
 		{
-			auto completion = openai::completion().create(j);
+			auto completion = openai::chat().create(j);
 			if(completion.is_null())
 			{
 				pChat->Echo("Failed to get response from AI. Null response");
@@ -304,9 +310,9 @@ void CChat::ConAi(IConsole::IResult *pResult, void *pUserData)
 				auto new_part = trim_copy(part);
 				if(!new_part.empty())
 				{
-					pChat->Echo(new_part.c_str());
 					std::lock_guard<std::mutex> lock(pChat->m_messagesMutex);
 					pChat->m_messages.push(new_part);
+					std::this_thread::sleep_for(std::chrono::seconds(10));
 				}
 				start = end;
 				while(start < message_string.length() && message_string[start] == ' ')
@@ -325,7 +331,7 @@ void CChat::ConAi(IConsole::IResult *pResult, void *pUserData)
 
 void CChat::HandleAiMessages()
 {
-	if((m_LastChatSend + (time_freq() * 5)) >= time() && (m_PendingChatCounter > 0))
+	if((m_LastChatSend + time_freq()) >= time() && (m_PendingChatCounter > 0))
 	{
 		return;
 	}

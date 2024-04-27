@@ -14,6 +14,8 @@
 #include <game/client/lineinput.h>
 #include <game/client/skin.h>
 
+#include <chrono>
+
 class CChat : public CComponent
 {
 	static constexpr float CHAT_HEIGHT_FULL = 200.0f;
@@ -189,5 +191,8 @@ public:
 
 	std::queue<std::string> m_messages{};
 	std::mutex m_messagesMutex{};
+	std::mutex m_aiMutex{};
+
+	std::chrono::time_point<std::chrono::steady_clock> m_lastAiMessage{};
 };
 #endif
