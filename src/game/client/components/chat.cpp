@@ -210,19 +210,18 @@ void CChat::ConAi(IConsole::IResult *pResult, void *pUserData)
 	}
 
 	nlohmann::json j{};
-	j["model"] = "llama3:latest";
-	j["temperature"] = 1.5;
+	j["model"] = "teellama";
 	j["messages"] = nlohmann::json::array();
 
 	auto name = pChat->m_pClient->m_aClients[pChat->m_pClient->m_aLocalIds[0]].m_aName;
 
-	char aBuf[128];
-	str_format(aBuf, sizeof(aBuf), "You're a teeworlds player called \"%s\" and you want to engage in interesting conversations!", name);
+	// char aBuf[128];
+	// str_format(aBuf, sizeof(aBuf), "You're a teeworlds player called \"%s\" and you want to engage in interesting conversations!", name);
 
-	nlohmann::json sys_message{};
-	sys_message["role"] = "system";
-	sys_message["content"] = aBuf;
-	j["messages"].push_back(sys_message);
+	// nlohmann::json sys_message{};
+	// sys_message["role"] = "system";
+	// sys_message["content"] = aBuf;
+	// j["messages"].push_back(sys_message);
 
 	for(; line <= pChat->m_CurrentLine; line++)
 	{
@@ -273,20 +272,20 @@ void CChat::ConAi(IConsole::IResult *pResult, void *pUserData)
 			auto message_string = message.get<std::string>();
 
 			std::string::size_type pos = 0; // Must initialize
-			while((pos = message_string.find("\n", pos)) != std::string::npos)
+			while((pos = message_string.find("\r\n", pos)) != std::string::npos)
 			{
 				message_string[pos] = ' ';
 			}
 
 			pos = 0; // Must initialize
-			while((pos = message_string.find("\r\n", pos)) != std::string::npos)
+			while((pos = message_string.find("\n", pos)) != std::string::npos)
 			{
 				message_string[pos] = ' ';
 			}
 
 			size_t start = 0;
 
-			constexpr int maxLength = 200;
+			constexpr int maxLength = MAX_LINE_LENGTH - 1;
 			while(start < message_string.length())
 			{
 				size_t end = start + maxLength;
@@ -346,11 +345,10 @@ void CChat::HandleAiMessages()
 	}
 
 	auto msg = m_messages.front();
-	char aBuf[201];
+	char aBuf[MAX_LINE_LENGTH] = {0};
 	str_format(aBuf, sizeof(aBuf), "%s", msg.c_str());
 	auto old_mode = m_Mode;
 	m_Mode = MODE_ALL;
-	Echo(aBuf);
 	SayChat(aBuf);
 	m_Mode = old_mode;
 	m_messages.pop();
